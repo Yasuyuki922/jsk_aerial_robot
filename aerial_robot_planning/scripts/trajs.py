@@ -774,65 +774,231 @@ class TestFixedRotorTraj(BaseTrajwFixedRotor):
 
         return rotor_id, ft_fixed, alpha_fixed
 
+# class HappyBirthdayFixedRotorTraj(BaseTrajwFixedRotor):
+#     def __init__(self, loop_num: int = 1, beat: float = 1.0) -> None:
+#         super().__init__(loop_num)
+        
+#         # fmt: off
+#         # beats of Happy Birthday (use strings for dot-notation)
+#         # note that the last beat is half note so it is doubled
+#         self.notes: list[str] = [
+#             "5", "6", "5", ".1", "7", "7",
+#             "5", "6", "5", ".2", ".1", ".1",
+#             "5", ".5", ".3", ".1", "7", "6", "6",
+#             ".4", ".3", ".1", ".2", ".1", ".1"
+#         ]
+#         # fmt: on
+
+#         self.beat = beat  # for quarter note
+#         self.t_total = len(self.notes) * self.beat
+#         self.T = self.t_total * self.loop_num
+
+#         self.min_thrust = 0.5  # TODO: if 0N is stable, change this place to 0.0
+
+#     def _parse_note(self, note: str) -> float:
+#         if note == "0":  # rest
+#             return self.min_thrust
+
+#         # upper octave
+#         if note.startswith(".") and note[1:].isdigit():
+#             return float(int(note[1:]) + 7)
+
+#         # lower octave
+#         if note.endswith(".") and note[:-1].isdigit():
+#             return max(0.0, float(int(note[:-1]) - 7))
+
+#         # middle octave
+#         if note.isdigit():
+#             return float(int(note))
+
+#         raise ValueError(f"Unrecognized note token: {note!r}")
+
+#     def get_fixed_rotor(self, t: float):
+#         rotor_id = 0
+#         alpha_fixed = 0.0
+
+#         # Song finished or not yet started → no fixed rotor
+#         if t < 0.0 or t >= self.T:
+#             self.use_fix_rotor_flag = False
+#             return rotor_id, self.min_thrust, alpha_fixed
+
+#         # Current beat index
+#         beat_idx = int(t / self.beat) % len(self.notes)
+#         note = self.notes[beat_idx]
+#         ft_fixed = 13 - self._parse_note(note)
+
+#         # Rest → disable flag
+#         self.use_fix_rotor_flag = ft_fixed != self.min_thrust
+#         return rotor_id, ft_fixed, alpha_fixed
+
+import numpy as np
+import rospy
+from std_msgs.msg import Float32
 
 class HappyBirthdayFixedRotorTraj(BaseTrajwFixedRotor):
-    def __init__(self, loop_num: int = 1, beat: float = 1.0) -> None:
+    def __init__(self, loop_num: int = 1) -> None:
         super().__init__(loop_num)
 
-        # fmt: off
-        # beats of Happy Birthday (use strings for dot-notation)
-        # note that the last beat is half note so it is doubled
-        self.notes: list[str] = [
-            "5", "6", "5", ".1", "7", "7",
-            "5", "6", "5", ".2", ".1", ".1",
-            "5", ".5", ".3", ".1", "7", "6", "6",
-            ".4", ".3", ".1", ".2", ".1", ".1"
+        self.note2thrust = {
+            "e": 5.00,
+            "f": 6.78,
+            "g": 8.83,
+            "a": 9.98,
+            "b": 12.56,
+            "c": 15.56,
+            "d": 17.25,
+            "e2": 21.05,
+        }
+
+        self.sequence = [
+            ("e", 1.0),
+            ("f", 1.0),
+            ("e", 1.0),
+            ("a", 1.0),
+            ("g", 2.0),
+
+            ("e", 1.0),
+            ("f", 1.0),
+            ("e", 1.0),
+            ("b", 1.0),
+            ("a", 2.0),
+
+            ("e", 1.0),
+            ("e", 1.0), #e2 could be a little dangerous
+            ("c", 1.0),
+            ("a", 1.0),
+            ("g", 1.0),
+            ("f", 2.5),
+
+            ("d", 1.0),
+            ("c", 1.0),
+            ("a", 1.0),
+            ("b", 1.0),
+            ("a", 1.0),
         ]
-        # fmt: on
 
-        self.beat = beat  # for quarter note
-        self.t_total = len(self.notes) * self.beat
-        self.T = self.t_total * self.loop_num
+        # 総再生時間を計算
+        self.beat_times = np.cumsum([0.0] + [dur for _, dur in self.sequence])
+        self.T = self.beat_times[-1]        # 曲全体の長さ
+        self.loop_num = loop_num
+        self.period = self.T
+        self.min_thrust = 0.5
+        self.use_fix_rotor_flag = True
+        self.is_ready = True
 
-        self.min_thrust = 0.5  # TODO: if 0N is stable, change this place to 0.0
+        # 周波数をpublishするトピック
+        self.freq_pub = rospy.Publisher("/fixed_rotor_frequency", Float32, queue_size=10)
 
-    def _parse_note(self, note: str) -> float:
-        if note == "0":  # rest
-            return self.min_thrust
-
-        # upper octave
-        if note.startswith(".") and note[1:].isdigit():
-            return float(int(note[1:]) + 7)
-
-        # lower octave
-        if note.endswith(".") and note[:-1].isdigit():
-            return max(0.0, float(int(note[:-1]) - 7))
-
-        # middle octave
-        if note.isdigit():
-            return float(int(note))
-
-        raise ValueError(f"Unrecognized note token: {note!r}")
+    def thrust_to_freq(self, f):
+        """推力 f [N] から周波数 h [Hz] を逆算"""
+        a = 0.0000161
+        b = 0.0327
+        c = -7.54 - f
+        disc = b**2 - 4*a*c
+        if disc < 0:
+            rospy.logwarn(f"Invalid thrust value f={f}, cannot compute frequency")
+            return 0.0
+        h = (-b + np.sqrt(disc)) / (2*a)
+        return h
 
     def get_fixed_rotor(self, t: float):
         rotor_id = 0
         alpha_fixed = 0.0
 
-        # Song finished or not yet started → no fixed rotor
-        if t < 0.0 or t >= self.T:
-            self.use_fix_rotor_flag = False
-            return rotor_id, self.min_thrust, alpha_fixed
+        # 曲をループ再生
+        t_mod = t % self.period
 
-        # Current beat index
-        beat_idx = int(t / self.beat) % len(self.notes)
-        note = self.notes[beat_idx]
-        ft_fixed = 13 - self._parse_note(note)
+        # 現在の音符インデックスを取得
+        idx = np.searchsorted(self.beat_times, t_mod, side="right") - 1
+        if idx >= len(self.sequence):
+            ft_fixed = self.min_thrust
+        else:
+            note, _ = self.sequence[idx]
+            ft_fixed = self.note2thrust[note]
 
-        # Rest → disable flag
-        self.use_fix_rotor_flag = ft_fixed != self.min_thrust
+        # 周波数に変換してpublish
+        freq = self.thrust_to_freq(ft_fixed)
+        self.freq_pub.publish(freq)
+
+        # rospy.loginfo(f"[DEBUG] t={t_mod:.2f}s, note={note}, ft={ft_fixed:.2f}N, freq={freq:.2f}Hz")
+
+        self.use_fix_rotor_flag = True
         return rotor_id, ft_fixed, alpha_fixed
 
+    def get_desired_state(self, t: float):
+        pos = np.array([0.0, 0.0, 1.2])
+        vel = np.zeros(3)
+        acc = np.zeros(3)
+        quat = np.array([1.0, 0.0, 0.0, 0.0])
 
+        rotor_id, ft_fixed, alpha_fixed = self.get_fixed_rotor(t)
+        return pos, vel, acc, quat
+
+
+
+class IncreasingFixedRotorTraj(BaseTrajwFixedRotor):
+    def __init__(self, loop_num: int = 1) -> None:
+        super().__init__(loop_num)
+
+        self.period = 12.0
+        self.T = 9999.0
+        self.min_thrust = 0.5
+        self.rotor_id = 0
+        self.use_fix_rotor_flag = True
+        self.is_ready = True
+
+        # frequencyをpublishするトピック
+        self.freq_pub = rospy.Publisher("/fixed_rotor_frequency", Float32, queue_size=10)
+
+    def thrust_to_freq(self, f):
+        """推力 f [N] から周波数 h [Hz] を逆算"""
+        a = 0.0000161
+        b = 0.0327
+        c = -7.54 - f
+        disc = b**2 - 4*a*c
+        if disc < 0:
+            rospy.logwarn(f"Invalid thrust value f={f}, cannot compute frequency")
+            return 0.0
+        h = (-b + np.sqrt(disc)) / (2*a)
+        return h
+    
+    def get_fixed_rotor(self, t: float):
+        rotor_id = 0
+        alpha_fixed = 0.0
+
+        # 12秒周期
+        t_mod = t % self.period
+
+        # 区間ごとに推力設定
+        if t_mod < 3.0:
+            ft_fixed = 5.0
+        elif t_mod < 6.0:
+            ft_fixed = 7.0
+        elif t_mod < 9.0:
+            ft_fixed = 9.0
+        else:
+            ft_fixed = 15.0
+
+        # 周波数に変換してpublish
+        freq = self.thrust_to_freq(ft_fixed)
+        self.freq_pub.publish(freq)
+
+        #rospy.loginfo(f"[DEBUG] t={t_mod:.2f}s, ft_fixed={ft_fixed:.2f}N, freq={freq:.2f}Hz")
+
+        self.use_fix_rotor_flag = True
+        return rotor_id, ft_fixed, alpha_fixed
+
+    def get_desired_state(self, t: float):
+        pos = np.array([0.0, 0.0, 1.2])
+        vel = np.zeros(3)
+        acc = np.zeros(3)
+        quat = np.array([1.0, 0.0, 0.0, 0.0])
+
+        rotor_id, ft_fixed, alpha_fixed = self.get_fixed_rotor(t)
+        return pos, vel, acc, quat
+
+
+    
 class InfinitePitchNeg90deg(BaseTraj):
     def __init__(self, loop_num) -> None:
         super().__init__(loop_num)
