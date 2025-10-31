@@ -774,9 +774,11 @@ class TestFixedRotorTraj(BaseTrajwFixedRotor):
 
         return rotor_id, ft_fixed, alpha_fixed
 
+
 import numpy as np
 import rospy
 from std_msgs.msg import Float32
+
 
 class HappyBirthdayFixedRotorTraj(BaseTrajwFixedRotor):
     def __init__(self, loop_num: int = 1) -> None:
@@ -799,20 +801,17 @@ class HappyBirthdayFixedRotorTraj(BaseTrajwFixedRotor):
             ("e", 1.0),
             ("a", 1.0),
             ("g", 2.0),
-
             ("e", 1.0),
             ("f", 1.0),
             ("e", 1.0),
             ("b", 1.0),
             ("a", 2.0),
-
             ("e", 1.0),
-            ("e", 1.0), #e2 could be a little dangerous
+            ("e", 1.0),  # e2 could be a little dangerous
             ("c", 1.0),
             ("a", 1.0),
             ("g", 1.0),
             ("f", 2.5),
-
             ("d", 1.0),
             ("c", 1.0),
             ("a", 1.0),
@@ -822,7 +821,7 @@ class HappyBirthdayFixedRotorTraj(BaseTrajwFixedRotor):
 
         # calculate the full playing time
         self.beat_times = np.cumsum([0.0] + [dur for _, dur in self.sequence])
-        self.T = self.beat_times[-1]        # duration
+        self.T = self.beat_times[-1]  # duration
         self.loop_num = loop_num
         self.period = self.T
         self.min_thrust = 0.5
@@ -837,11 +836,11 @@ class HappyBirthdayFixedRotorTraj(BaseTrajwFixedRotor):
         a = 0.0000161
         b = 0.0327
         c = -7.54 - f
-        disc = b**2 - 4*a*c
+        disc = b**2 - 4 * a * c
         if disc < 0:
             rospy.logwarn(f"Invalid thrust value f={f}, cannot compute frequency")
             return 0.0
-        h = (-b + np.sqrt(disc)) / (2*a)
+        h = (-b + np.sqrt(disc)) / (2 * a)
         return h
 
     def get_fixed_rotor(self, t: float):
@@ -877,7 +876,7 @@ class HappyBirthdayFixedRotorTraj(BaseTrajwFixedRotor):
         rotor_id, ft_fixed, alpha_fixed = self.get_fixed_rotor(t)
         return pos, vel, acc, quat
 
-    
+
 class IncreasingFixedRotorTraj(BaseTrajwFixedRotor):
     def __init__(self, loop_num: int = 1) -> None:
         super().__init__(loop_num)
@@ -897,13 +896,13 @@ class IncreasingFixedRotorTraj(BaseTrajwFixedRotor):
         a = 0.0000161
         b = 0.0327
         c = -7.54 - f
-        disc = b**2 - 4*a*c
+        disc = b**2 - 4 * a * c
         if disc < 0:
             rospy.logwarn(f"Invalid thrust value f={f}, cannot compute frequency")
             return 0.0
-        h = (-b + np.sqrt(disc)) / (2*a)
+        h = (-b + np.sqrt(disc)) / (2 * a)
         return h
-    
+
     def get_fixed_rotor(self, t: float):
         rotor_id = 0
         alpha_fixed = 0.0
@@ -925,7 +924,7 @@ class IncreasingFixedRotorTraj(BaseTrajwFixedRotor):
         freq = self.thrust_to_freq(ft_fixed)
         self.freq_pub.publish(freq)
 
-        #rospy.loginfo(f"[DEBUG] t={t_mod:.2f}s, ft_fixed={ft_fixed:.2f}N, freq={freq:.2f}Hz")
+        # rospy.loginfo(f"[DEBUG] t={t_mod:.2f}s, ft_fixed={ft_fixed:.2f}N, freq={freq:.2f}Hz")
 
         self.use_fix_rotor_flag = True
         return rotor_id, ft_fixed, alpha_fixed
@@ -940,7 +939,6 @@ class IncreasingFixedRotorTraj(BaseTrajwFixedRotor):
         return pos, vel, acc, quat
 
 
-    
 class InfinitePitchNeg90deg(BaseTraj):
     def __init__(self, loop_num) -> None:
         super().__init__(loop_num)
